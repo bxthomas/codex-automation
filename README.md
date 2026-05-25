@@ -25,6 +25,7 @@ cd codex-automation
 ./bin/cx install messages     # install one MCP server
 ./bin/cx install --install-cx # put cx on PATH as ~/.local/bin/cx
 ./bin/cx install --install-codex-wrapper
+./bin/cx install --install-imessage-agent --allowed-handle tamikomadori@yahoo.com
 ./bin/cx doctor               # inspect local setup
 ./bin/cx exec "prompt"        # run Codex with automation secrets loaded
 ```
@@ -32,6 +33,36 @@ cd codex-automation
 `--install-codex-wrapper` installs `~/.local/bin/codex` as a wrapper that loads automation secrets through `cx exec` before launching the real Codex binary. Use this on Macs where direct `codex` starts without `HOME_ASSISTANT_TOKEN` in the shell environment. Keep `~/.local/bin` before the real Codex location in `PATH`.
 
 The old `./bin/codex-automation` path remains as a compatibility wrapper for `./bin/cx`.
+
+## Optional iMessage Trigger
+
+One Mac can listen for trusted iMessage commands and invoke Codex. This is intentionally opt-in; a normal `cx install` does not install or start the listener.
+
+```sh
+./bin/cx install --install-imessage-agent --allowed-handle tamikomadori@yahoo.com
+```
+
+By default the listener:
+
+- reads new inbound Messages rows every 5 seconds
+- only accepts exact allowlisted handles
+- only runs messages that start with `!codex `
+- invokes `./bin/cx exec` in this repo
+- sends a concise iMessage reply with Codex output
+- stores its cursor in `~/Library/Application Support/codex-automation/imessage-codex-agent-state.json`
+- runs as `~/Library/LaunchAgents/com.brianthomas.imessage-codex-agent.plist`
+
+Useful options:
+
+```sh
+./bin/cx install --install-imessage-agent \
+  --allowed-handle tamikomadori@yahoo.com \
+  --prefix '!codex ' \
+  --poll-seconds 10 \
+  --reply-mode summary
+```
+
+The LaunchAgent uses `KeepAlive` and `ThrottleInterval` so launchd restarts it after a crash without tight restart loops. Grant Full Disk Access to the app or shell that runs the LaunchAgent, otherwise macOS will block reads from `~/Library/Messages/chat.db`.
 
 ## MCP Servers
 

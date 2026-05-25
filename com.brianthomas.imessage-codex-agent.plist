@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.brianthomas.imessage-codex-agent</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/brianthomas/codex-exec-test/bin/imessage-codex-agent</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>IMESSAGE_CODEX_ALLOWED_HANDLES</key>
+    <string></string>
+    <key>IMESSAGE_CODEX_PREFIX</key>
+    <string>!codex </string>
+    <key>IMESSAGE_CODEX_WORKDIR</key>
+    <string>/Users/brianthomas/codex-exec-test</string>
+    <key>IMESSAGE_CODEX_POLL_SECONDS</key>
+    <string>5</string>
+    <key>IMESSAGE_CODEX_REPLY_MODE</key>
+    <string>summary</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/brianthomas/Library/Logs/imessage-codex-agent.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/brianthomas/Library/Logs/imessage-codex-agent.log</string>
+</dict>
+</plist>

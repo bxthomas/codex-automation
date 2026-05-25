@@ -25,6 +25,11 @@ DEFAULT_AWS_BINARIES = (
     Path("/usr/local/bin/aws"),
     Path("/opt/homebrew/bin/aws"),
 )
+IMESSAGE_AGENT_SOURCE = REPO_ROOT / "com.brianthomas.imessage-codex-agent.plist"
+IMESSAGE_AGENT_DESTINATION = (
+    Path.home() / "Library" / "LaunchAgents" / "com.brianthomas.imessage-codex-agent.plist"
+)
+IMESSAGE_AGENT_LABEL = "com.brianthomas.imessage-codex-agent"
 
 
 def load_manifest() -> dict[str, Any]:
@@ -76,6 +81,11 @@ def launchctl_getenv(key: str) -> str | None:
 
 def path_arg(value: str) -> Path:
     return Path(value).expanduser()
+
+
+def parse_env_list(key: str) -> list[str]:
+    value = os.environ.get(key, "")
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def read_secret(manifest: dict[str, Any]) -> dict[str, str]:
@@ -288,6 +298,43 @@ exec {toml_quote(str(REPO_ROOT / "bin" / "cx"))} exec "$@"
     print(f"Wrapper target: {real_codex}")
 
 
+def install_imessage_agent(args: argparse.Namespace) -> None:
+    if not args.allowed_handles:
+        fail("Pass --allowed-handle at least once, or set IMESSAGE_CODEX_ALLOWED_HANDLES.")
+    if args.poll_seconds < 1:
+        fail("--poll-seconds must be at least 1.")
+
+    IMESSAGE_AGENT_DESTINATION.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with IMESSAGE_AGENT_SOURCE.open("rb") as source_file:
+        plist = plistlib.load(source_file)
+
+    env = dict(plist.get("EnvironmentVariables") or {})
+    env["IMESSAGE_CODEX_ALLOWED_HANDLES"] = ",".join(args.allowed_handles)
+    env["IMESSAGE_CODEX_PREFIX"] = args.prefix
+    env["IMESSAGE_CODEX_WORKDIR"] = str(args.workdir)
+    env["IMESSAGE_CODEX_POLL_SECONDS"] = str(args.poll_seconds)
+    env["IMESSAGE_CODEX_REPLY_MODE"] = args.reply_mode
+    plist["EnvironmentVariables"] = env
+    plist["ProgramArguments"] = [str(REPO_ROOT / "bin" / "imessage-codex-agent")]
+
+    with IMESSAGE_AGENT_DESTINATION.open("wb") as destination_file:
+        plistlib.dump(plist, destination_file)
+    print(f"Installed iMessage Codex LaunchAgent: {IMESSAGE_AGENT_DESTINATION}")
+
+    if args.no_bootstrap:
+        return
+
+    uid = str(os.getuid())
+    run(["launchctl", "bootout", f"gui/{uid}", str(IMESSAGE_AGENT_DESTINATION)], check=False)
+    run(["launchctl", "bootstrap", f"gui/{uid}", str(IMESSAGE_AGENT_DESTINATION)])
+    run(["launchctl", "kickstart", "-k", f"gui/{uid}/{IMESSAGE_AGENT_LABEL}"])
+    print(f"Started LaunchAgent: {IMESSAGE_AGENT_LABEL}")
+
+
+def command_install_imessage_agent(args: argparse.Namespace) -> None:
+    install_imessage_agent(args)
+
+
 def command_install(args: argparse.Namespace) -> None:
     manifest = load_manifest()
     selected = set(args.servers) if args.servers else None
@@ -299,6 +346,8 @@ def command_install(args: argparse.Namespace) -> None:
     if args.install_codex_wrapper:
         install_cx_on_path(args.bin_dir)
         install_codex_wrapper(args.bin_dir)
+    if args.install_imessage_agent:
+        install_imessage_agent(args)
 
 
 def command_exec(args: argparse.Namespace) -> None:
@@ -339,6 +388,12 @@ def command_doctor(_: argparse.Namespace) -> None:
         status = "present" if os.environ.get(key) or launchctl_getenv(key) else "missing"
         print(f"env {key}: {status}")
 
+    print(
+        "imessage agent: "
+        + ("installed" if IMESSAGE_AGENT_DESTINATION.exists() else "missing")
+        + f" ({IMESSAGE_AGENT_DESTINATION})"
+    )
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cx")
@@ -355,7 +410,41 @@ def build_parser() -> argparse.ArgumentParser:
     )
     install.add_argument("--no-launch-agent", dest="launch_agent", action="store_false")
     install.add_argument("--no-bootstrap", action="store_true")
-    install.set_defaults(func=command_install, launch_agent=True)
+    install.add_argument(
+        "--install-imessage-agent",
+        action="store_true",
+        help="Also install and start the optional iMessage-to-Codex LaunchAgent",
+    )
+    install.add_argument(
+        "--allowed-handle",
+        dest="allowed_handles",
+        action="append",
+        default=parse_env_list("IMESSAGE_CODEX_ALLOWED_HANDLES"),
+        help="Allowed iMessage sender for --install-imessage-agent. Repeat for multiple senders.",
+    )
+    install.add_argument(
+        "--prefix",
+        default=os.environ.get("IMESSAGE_CODEX_PREFIX", "!codex "),
+        help="Required message prefix for --install-imessage-agent.",
+    )
+    install.add_argument(
+        "--workdir",
+        type=path_arg,
+        default=path_arg(os.environ.get("IMESSAGE_CODEX_WORKDIR", str(REPO_ROOT))),
+        help="Workspace where iMessage-triggered Codex commands run.",
+    )
+    install.add_argument(
+        "--poll-seconds",
+        type=float,
+        default=float(os.environ.get("IMESSAGE_CODEX_POLL_SECONDS", "5")),
+        help="iMessage polling interval.",
+    )
+    install.add_argument(
+        "--reply-mode",
+        choices=["summary", "none"],
+        default=os.environ.get("IMESSAGE_CODEX_REPLY_MODE", "summary"),
+    )
+    install.set_defaults(func=command_install, launch_agent=True, install_imessage_agent=False)
 
     exec_parser = subparsers.add_parser("exec", help="Run Codex with automation secrets loaded")
     exec_parser.add_argument("codex_args", nargs=argparse.REMAINDER)
@@ -363,6 +452,42 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = subparsers.add_parser("doctor", help="Check local automation setup")
     doctor.set_defaults(func=command_doctor)
+
+    imessage_agent = subparsers.add_parser(
+        "install-imessage-agent",
+        help="Install and start the iMessage-to-Codex LaunchAgent",
+    )
+    imessage_agent.add_argument(
+        "--allowed-handle",
+        dest="allowed_handles",
+        action="append",
+        default=parse_env_list("IMESSAGE_CODEX_ALLOWED_HANDLES"),
+        help="Allowed phone number or iMessage email. Repeat for multiple senders.",
+    )
+    imessage_agent.add_argument(
+        "--prefix",
+        default=os.environ.get("IMESSAGE_CODEX_PREFIX", "!codex "),
+        help="Message prefix required before Codex is invoked.",
+    )
+    imessage_agent.add_argument(
+        "--workdir",
+        type=path_arg,
+        default=path_arg(os.environ.get("IMESSAGE_CODEX_WORKDIR", str(REPO_ROOT))),
+        help="Workspace where Codex commands run.",
+    )
+    imessage_agent.add_argument(
+        "--poll-seconds",
+        type=float,
+        default=float(os.environ.get("IMESSAGE_CODEX_POLL_SECONDS", "5")),
+        help="Polling interval. Must be at least 1 second.",
+    )
+    imessage_agent.add_argument(
+        "--reply-mode",
+        choices=["summary", "none"],
+        default=os.environ.get("IMESSAGE_CODEX_REPLY_MODE", "summary"),
+    )
+    imessage_agent.add_argument("--no-bootstrap", action="store_true")
+    imessage_agent.set_defaults(func=command_install_imessage_agent)
 
     return parser
 
