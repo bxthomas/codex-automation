@@ -8,10 +8,13 @@ Project-local MCP servers and setup tooling for Codex automation.
 git clone git@github.com:bxthomas/codex-automation.git
 cd codex-automation
 ./bin/cx install
+./bin/cx install --install-cx
 ./bin/cx doctor
 ```
 
 `cx install` updates `~/.codex/config.toml` with the MCP servers listed in `codex-automation.json`. It makes a timestamped backup before editing.
+
+`cx install --install-cx` symlinks `cx` into `~/.local/bin`.
 
 `cx doctor` checks local command availability, Codex MCP config, and relevant environment variables.
 
@@ -20,9 +23,13 @@ cd codex-automation
 ```sh
 ./bin/cx install              # install all MCP server config
 ./bin/cx install messages     # install one MCP server
+./bin/cx install --install-cx # put cx on PATH as ~/.local/bin/cx
+./bin/cx install --install-codex-wrapper
 ./bin/cx doctor               # inspect local setup
 ./bin/cx exec "prompt"        # run Codex with automation secrets loaded
 ```
+
+`--install-codex-wrapper` installs `~/.local/bin/codex` as a wrapper that loads automation secrets through `cx exec` before launching the real Codex binary. Use this on Macs where direct `codex` starts without `HOME_ASSISTANT_TOKEN` in the shell environment. Keep `~/.local/bin` before the real Codex location in `PATH`.
 
 The old `./bin/codex-automation` path remains as a compatibility wrapper for `./bin/cx`.
 

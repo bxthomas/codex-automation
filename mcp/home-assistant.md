@@ -44,3 +44,11 @@ The project launcher remains available if you want an explicit per-command fallb
 ```
 
 The launcher does not print the token. It reads the `automation` secret, exports `HOME_ASSISTANT_TOKEN` for the child Codex process, and then replaces itself with `codex`.
+
+If direct `codex` from a shell starts without `HOME_ASSISTANT_TOKEN`, install the wrapper:
+
+```sh
+./bin/cx install --install-codex-wrapper
+```
+
+This writes `~/.local/bin/codex`, which loads automation secrets through `cx exec` before launching the real Codex binary.
