@@ -334,8 +334,8 @@ def main() -> None:
         rows = fetch_new_messages(last_seen)
         for row in rows:
             last_seen = max(last_seen, int(row["message_id"]))
-            process_message(row, args)
             save_state({"last_seen_message_id": last_seen})
+            process_message(row, args)
         if args.once:
             return
         if not rows:

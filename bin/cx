@@ -581,6 +581,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "exec":
+        command_exec(argparse.Namespace(codex_args=sys.argv[2:]))
+        return
+
     parser = build_parser()
     args = parser.parse_args()
     args.func(args)
