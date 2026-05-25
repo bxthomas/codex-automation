@@ -65,6 +65,8 @@ Useful options:
 
 The LaunchAgent uses `KeepAlive` and `ThrottleInterval` so launchd restarts it after a crash without tight restart loops. Grant Full Disk Access to the app or shell that runs the LaunchAgent, otherwise macOS will block reads from `~/Library/Messages/chat.db`.
 
+The installer writes the current Python executable into the LaunchAgent. This avoids launchd falling back to macOS's developer-tools `python3` shim, which can produce repeated `xcode-select` messages on Macs without Command Line Tools installed.
+
 Check whether it is loaded and running:
 
 ```sh

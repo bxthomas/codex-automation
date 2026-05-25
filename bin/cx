@@ -364,7 +364,10 @@ def install_imessage_agent(args: argparse.Namespace) -> None:
     env["IMESSAGE_CODEX_POLL_SECONDS"] = str(args.poll_seconds)
     env["IMESSAGE_CODEX_REPLY_MODE"] = args.reply_mode
     plist["EnvironmentVariables"] = env
-    plist["ProgramArguments"] = [str(REPO_ROOT / "bin" / "imessage-codex-agent")]
+    plist["ProgramArguments"] = [
+        sys.executable,
+        str(REPO_ROOT / "bin" / "imessage-codex-agent"),
+    ]
 
     with IMESSAGE_AGENT_DESTINATION.open("wb") as destination_file:
         plistlib.dump(plist, destination_file)
