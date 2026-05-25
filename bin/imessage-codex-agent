@@ -85,6 +85,7 @@ def fetch_new_messages(after_id: int, limit: int = 50) -> list[sqlite3.Row]:
         SELECT
           m.ROWID AS message_id,
           h.id AS handle,
+          m.is_from_me AS is_from_me,
           m.text AS text
         FROM message m
         LEFT JOIN handle h ON h.ROWID = m.handle_id
@@ -231,7 +232,8 @@ def process_message(row: sqlite3.Row, args: argparse.Namespace) -> None:
     handle = str(row["handle"] or "")
     text = str(row["text"] or "")
     normalized_handle = handle.lower()
-    if normalized_handle not in args.allowed_handles:
+    allowed_handles = args.allowed_self_handles if bool(row["is_from_me"]) else args.allowed_handles
+    if normalized_handle not in allowed_handles:
         return
     if not text.startswith(args.prefix):
         return
@@ -260,7 +262,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allowed-handles",
         default=os.environ.get("IMESSAGE_CODEX_ALLOWED_HANDLES", ""),
-        help="Comma-separated iMessage handles allowed to invoke Codex.",
+        help="Comma-separated inbound iMessage handles allowed to invoke Codex.",
+    )
+    parser.add_argument(
+        "--allowed-self-handles",
+        default=os.environ.get("IMESSAGE_CODEX_ALLOWED_SELF_HANDLES", ""),
+        help="Comma-separated self-sent iMessage handles allowed to invoke Codex.",
     )
     parser.add_argument("--prefix", default=os.environ.get("IMESSAGE_CODEX_PREFIX", DEFAULT_PREFIX))
     parser.add_argument(
@@ -319,8 +326,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     args.allowed_handles = parse_handles(args.allowed_handles)
-    if not args.allowed_handles:
-        fail("Configure at least one allowed handle with IMESSAGE_CODEX_ALLOWED_HANDLES.")
+    args.allowed_self_handles = parse_handles(args.allowed_self_handles)
+    if not args.allowed_handles and not args.allowed_self_handles:
+        fail(
+            "Configure at least one inbound or self handle with "
+            "IMESSAGE_CODEX_ALLOWED_HANDLES or IMESSAGE_CODEX_ALLOWED_SELF_HANDLES."
+        )
     if args.poll_seconds < 1:
         fail("--poll-seconds must be at least 1.")
 
@@ -334,6 +345,7 @@ def main() -> None:
     log(
         "started; "
         f"handles={','.join(sorted(args.allowed_handles))} "
+        f"self_handles={','.join(sorted(args.allowed_self_handles))} "
         f"prefix={args.prefix!r} poll={args.poll_seconds}s"
     )
 

@@ -46,7 +46,7 @@ One Mac can listen for trusted iMessage commands and invoke Codex. This is inten
 By default the listener:
 
 - reads new Messages rows every 5 seconds, including your own sent messages
-- only accepts exact allowlisted handles
+- only accepts exact allowlisted inbound handles and separately allowlisted self-sent handles
 - only runs messages that start with `!codex `
 - invokes `./bin/cx exec` in this repo
 - sends a concise iMessage reply with Codex output
@@ -59,6 +59,7 @@ Useful options:
 ```sh
 ./bin/cx install --install-imessage-agent \
   --allowed-handle tamikomadori@yahoo.com \
+  --allowed-self-handle bxthomas@gmail.com \
   --prefix '!codex ' \
   --poll-seconds 10 \
   --reply-mode summary

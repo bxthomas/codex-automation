@@ -387,8 +387,11 @@ exec {toml_quote(str(python_executable()))} {toml_quote(str(REPO_ROOT / "bin" / 
 
 
 def install_imessage_agent(args: argparse.Namespace) -> None:
-    if not args.allowed_handles:
-        fail("Pass --allowed-handle at least once, or set IMESSAGE_CODEX_ALLOWED_HANDLES.")
+    if not args.allowed_handles and not args.allowed_self_handles:
+        fail(
+            "Pass --allowed-handle or --allowed-self-handle at least once, or set "
+            "IMESSAGE_CODEX_ALLOWED_HANDLES / IMESSAGE_CODEX_ALLOWED_SELF_HANDLES."
+        )
     if args.poll_seconds < 1:
         fail("--poll-seconds must be at least 1.")
 
@@ -399,6 +402,7 @@ def install_imessage_agent(args: argparse.Namespace) -> None:
 
     env = dict(plist.get("EnvironmentVariables") or {})
     env["IMESSAGE_CODEX_ALLOWED_HANDLES"] = ",".join(args.allowed_handles)
+    env["IMESSAGE_CODEX_ALLOWED_SELF_HANDLES"] = ",".join(args.allowed_self_handles)
     env["IMESSAGE_CODEX_PREFIX"] = args.prefix
     env["IMESSAGE_CODEX_WORKDIR"] = str(args.workdir)
     env["IMESSAGE_CODEX_POLL_SECONDS"] = str(args.poll_seconds)
@@ -512,6 +516,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allowed iMessage sender for --install-imessage-agent. Repeat for multiple senders.",
     )
     install.add_argument(
+        "--allowed-self-handle",
+        dest="allowed_self_handles",
+        action="append",
+        default=parse_env_list("IMESSAGE_CODEX_ALLOWED_SELF_HANDLES"),
+        help="Allowed self-sent iMessage handle for --install-imessage-agent. Repeat for multiple senders.",
+    )
+    install.add_argument(
         "--prefix",
         default=os.environ.get("IMESSAGE_CODEX_PREFIX", "!codex "),
         help="Required message prefix for --install-imessage-agent.",
@@ -552,6 +563,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=parse_env_list("IMESSAGE_CODEX_ALLOWED_HANDLES"),
         help="Allowed phone number or iMessage email. Repeat for multiple senders.",
+    )
+    imessage_agent.add_argument(
+        "--allowed-self-handle",
+        dest="allowed_self_handles",
+        action="append",
+        default=parse_env_list("IMESSAGE_CODEX_ALLOWED_SELF_HANDLES"),
+        help="Allowed self-sent phone number or iMessage email. Repeat for multiple senders.",
     )
     imessage_agent.add_argument(
         "--prefix",
