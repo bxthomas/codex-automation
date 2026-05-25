@@ -27,7 +27,8 @@ DEFAULT_PREFIX = "!codex "
 DEFAULT_POLL_SECONDS = 5.0
 DEFAULT_MAX_PROMPT_CHARS = 2000
 DEFAULT_REPLY_CHARS = 1200
-DEFAULT_CODEX_ARGS = ["--ask-for-approval", "never", "--color", "never"]
+DEFAULT_CODEX_GLOBAL_ARGS = ["--ask-for-approval", "never"]
+DEFAULT_CODEX_EXEC_ARGS = ["--color", "never"]
 
 
 def log(message: str) -> None:
@@ -122,8 +123,8 @@ end run
         raise RuntimeError(detail or "osascript exited non-zero")
 
 
-def codex_command(prompt: str, extra_args: list[str]) -> list[str]:
-    return [str(REPO_ROOT / "bin" / "cx"), "exec", "exec", *extra_args, prompt]
+def codex_command(prompt: str, global_args: list[str], exec_args: list[str]) -> list[str]:
+    return [str(REPO_ROOT / "bin" / "cx"), "exec", *global_args, "exec", *exec_args, prompt]
 
 
 def strip_ansi(text: str) -> str:
@@ -208,7 +209,7 @@ def run_codex(command_text: str, handle: str, args: argparse.Namespace) -> str:
         "because it may be sent back by iMessage."
     )
     completed = run_with_pty(
-        codex_command(prompt, args.codex_arg),
+        codex_command(prompt, args.codex_global_arg, args.codex_exec_arg),
         cwd=args.workdir,
         timeout_seconds=args.codex_timeout_seconds,
     )
@@ -294,10 +295,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=int(os.environ.get("IMESSAGE_CODEX_TIMEOUT_SECONDS", "900")),
     )
     parser.add_argument(
-        "--codex-arg",
+        "--codex-global-arg",
         action="append",
-        default=shlex.split(os.environ.get("IMESSAGE_CODEX_EXTRA_ARGS", "")) or DEFAULT_CODEX_ARGS,
-        help="Extra argument passed to Codex before the prompt. Repeat as needed.",
+        default=shlex.split(os.environ.get("IMESSAGE_CODEX_GLOBAL_ARGS", ""))
+        or DEFAULT_CODEX_GLOBAL_ARGS,
+        help="Extra argument passed to Codex before the exec subcommand. Repeat as needed.",
+    )
+    parser.add_argument(
+        "--codex-exec-arg",
+        action="append",
+        default=shlex.split(os.environ.get("IMESSAGE_CODEX_EXEC_ARGS", "")) or DEFAULT_CODEX_EXEC_ARGS,
+        help="Extra argument passed to codex exec before the prompt. Repeat as needed.",
     )
     parser.add_argument(
         "--replay-existing",
