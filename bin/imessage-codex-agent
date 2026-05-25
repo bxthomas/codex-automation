@@ -27,7 +27,7 @@ DEFAULT_PREFIX = "!codex "
 DEFAULT_POLL_SECONDS = 5.0
 DEFAULT_MAX_PROMPT_CHARS = 2000
 DEFAULT_REPLY_CHARS = 1200
-DEFAULT_CODEX_ARGS = ["--ask-for-approval", "never"]
+DEFAULT_CODEX_ARGS = ["--ask-for-approval", "never", "--color", "never"]
 
 
 def log(message: str) -> None:
@@ -123,7 +123,7 @@ end run
 
 
 def codex_command(prompt: str, extra_args: list[str]) -> list[str]:
-    return [str(REPO_ROOT / "bin" / "cx"), "exec", *extra_args, prompt]
+    return [str(REPO_ROOT / "bin" / "cx"), "exec", "exec", *extra_args, prompt]
 
 
 def strip_ansi(text: str) -> str:
@@ -142,7 +142,7 @@ def run_with_pty(command: list[str], cwd: Path, timeout_seconds: int) -> subproc
     master_fd, slave_fd = pty.openpty()
     output = bytearray()
     env = os.environ.copy()
-    env.setdefault("TERM", "dumb")
+    env.setdefault("TERM", "xterm-256color")
     env.setdefault("NO_COLOR", "1")
 
     process = subprocess.Popen(
