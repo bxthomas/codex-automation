@@ -51,6 +51,7 @@ By default the listener:
 - invokes `./bin/cx exec` in this repo
 - sends a concise iMessage reply with Codex output
 - stores its cursor in `~/Library/Application Support/codex-automation/imessage-codex-agent-state.json`
+- installs a selectable app wrapper at `~/Applications/Codex iMessage Agent.app`
 - runs as `~/Library/LaunchAgents/com.brianthomas.imessage-codex-agent.plist`
 
 Useful options:
@@ -63,9 +64,9 @@ Useful options:
   --reply-mode summary
 ```
 
-The LaunchAgent uses `KeepAlive` and `ThrottleInterval` so launchd restarts it after a crash without tight restart loops. Grant Full Disk Access to the app or shell that runs the LaunchAgent, otherwise macOS will block reads from `~/Library/Messages/chat.db`.
+The LaunchAgent uses `KeepAlive` and `ThrottleInterval` so launchd restarts it after a crash without tight restart loops.
 
-The installer writes the current Python executable into the LaunchAgent. This avoids launchd falling back to macOS's developer-tools `python3` shim, which can produce repeated `xcode-select` messages on Macs without Command Line Tools installed.
+Grant Full Disk Access to `~/Applications/Codex iMessage Agent.app`, otherwise macOS will block reads from `~/Library/Messages/chat.db`. The app wrapper exists because Full Disk Access often refuses hidden runtime binaries.
 
 Check whether it is loaded and running:
 

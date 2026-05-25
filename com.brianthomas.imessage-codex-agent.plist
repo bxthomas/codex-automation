@@ -8,8 +8,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
-    <string>/Users/brianthomas/codex-exec-test/bin/imessage-codex-agent</string>
+    <string>/Users/brianthomas/Applications/Codex iMessage Agent.app/Contents/MacOS/Codex iMessage Agent</string>
   </array>
 
   <key>EnvironmentVariables</key>
