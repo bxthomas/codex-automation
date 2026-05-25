@@ -45,7 +45,7 @@ One Mac can listen for trusted iMessage commands and invoke Codex. This is inten
 
 By default the listener:
 
-- reads new inbound Messages rows every 5 seconds
+- reads new Messages rows every 5 seconds, including your own sent messages
 - only accepts exact allowlisted handles
 - only runs messages that start with `!codex `
 - invokes `./bin/cx exec` in this repo
