@@ -1,0 +1,46 @@
+#!/bin/zsh
+# Load selected automation secrets into the macOS user launchd environment.
+
+set -u
+
+secret_name="automation"
+aws_cli="/usr/local/bin/aws"
+env_keys=("HOME_ASSISTANT_TOKEN")
+
+log() {
+  /bin/echo "$(/bin/date '+%Y-%m-%dT%H:%M:%S') $*" >&2
+}
+
+if [ ! -x "$aws_cli" ]; then
+  log "ERROR: aws CLI not found at $aws_cli."
+  exit 1
+fi
+
+secret_json="$("$aws_cli" secretsmanager get-secret-value \
+  --secret-id "$secret_name" \
+  --query SecretString \
+  --output text)"
+
+if [ -z "$secret_json" ]; then
+  log "ERROR: AWS Secrets Manager secret '$secret_name' returned an empty SecretString."
+  exit 1
+fi
+
+for key in "${env_keys[@]}"; do
+  value="$(/usr/bin/ruby -rjson -e '
+    data = JSON.parse(STDIN.read)
+    key = ARGV.fetch(0)
+    value = data[key]
+    exit 2 unless value.is_a?(String) && !value.empty?
+    print value
+  ' "$key" <<< "$secret_json")"
+
+  if [ -z "$value" ]; then
+    log "ERROR: Secret '$secret_name' is missing key: $key"
+    exit 1
+  fi
+
+  /bin/launchctl setenv "$key" "$value"
+done
+
+log "Loaded ${(j:, :)env_keys} into launchd environment."
