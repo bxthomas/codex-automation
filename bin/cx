@@ -21,6 +21,10 @@ MANIFEST_PATH = REPO_ROOT / "codex-automation.json"
 CODEX_CONFIG = Path.home() / ".codex" / "config.toml"
 DEFAULT_USER_BIN = Path.home() / ".local" / "bin"
 DEFAULT_CODEX_BINARY = Path("/Applications/Codex.app/Contents/Resources/codex")
+DEFAULT_AWS_BINARIES = (
+    Path("/usr/local/bin/aws"),
+    Path("/opt/homebrew/bin/aws"),
+)
 
 
 def load_manifest() -> dict[str, Any]:
@@ -51,6 +55,11 @@ def command_path(command: str) -> str | None:
         if app_path.exists():
             return str(app_path)
 
+    if command == "aws":
+        for candidate in DEFAULT_AWS_BINARIES:
+            if candidate.exists():
+                return str(candidate)
+
     return None
 
 
@@ -71,8 +80,12 @@ def path_arg(value: str) -> Path:
 
 def read_secret(manifest: dict[str, Any]) -> dict[str, str]:
     secret_name = manifest.get("secretName", "automation")
+    aws_path = command_path("aws")
+    if not aws_path:
+        fail("aws CLI not found; cannot read automation secrets.", 127)
+
     command = [
-        "aws",
+        aws_path,
         "secretsmanager",
         "get-secret-value",
         "--secret-id",
