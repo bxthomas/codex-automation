@@ -27,6 +27,7 @@ DEFAULT_PREFIX = "!codex "
 DEFAULT_POLL_SECONDS = 5.0
 DEFAULT_MAX_PROMPT_CHARS = 2000
 DEFAULT_REPLY_CHARS = 1200
+DEFAULT_CODEX_ARGS = ["--ask-for-approval", "never"]
 
 
 def log(message: str) -> None:
@@ -129,6 +130,14 @@ def strip_ansi(text: str) -> str:
     return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
 
 
+def append_output(output: bytearray, chunk: bytes) -> None:
+    output.extend(chunk)
+    text = strip_ansi(chunk.decode(errors="replace")).strip()
+    if text:
+        for line in text.splitlines():
+            log(f"codex: {line}")
+
+
 def run_with_pty(command: list[str], cwd: Path, timeout_seconds: int) -> subprocess.CompletedProcess[str]:
     master_fd, slave_fd = pty.openpty()
     output = bytearray()
@@ -164,7 +173,7 @@ def run_with_pty(command: list[str], cwd: Path, timeout_seconds: int) -> subproc
                         raise
                     chunk = b""
                 if chunk:
-                    output.extend(chunk)
+                    append_output(output, chunk)
                 elif process.poll() is not None:
                     break
             elif process.poll() is not None:
@@ -173,7 +182,7 @@ def run_with_pty(command: list[str], cwd: Path, timeout_seconds: int) -> subproc
                         chunk = os.read(master_fd, 4096)
                         if not chunk:
                             break
-                        output.extend(chunk)
+                        append_output(output, chunk)
                 except OSError as exc:
                     if exc.errno != errno.EIO:
                         raise
@@ -287,7 +296,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--codex-arg",
         action="append",
-        default=shlex.split(os.environ.get("IMESSAGE_CODEX_EXTRA_ARGS", "")),
+        default=shlex.split(os.environ.get("IMESSAGE_CODEX_EXTRA_ARGS", "")) or DEFAULT_CODEX_ARGS,
         help="Extra argument passed to Codex before the prompt. Repeat as needed.",
     )
     parser.add_argument(
