@@ -4,8 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
+import pty
+import re
+import select
 import shlex
 import sqlite3
 import subprocess
@@ -121,6 +125,70 @@ def codex_command(prompt: str, extra_args: list[str]) -> list[str]:
     return [str(REPO_ROOT / "bin" / "cx"), "exec", *extra_args, prompt]
 
 
+def strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+
+
+def run_with_pty(command: list[str], cwd: Path, timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+    master_fd, slave_fd = pty.openpty()
+    output = bytearray()
+    env = os.environ.copy()
+    env.setdefault("TERM", "dumb")
+    env.setdefault("NO_COLOR", "1")
+
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=env,
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        close_fds=True,
+    )
+    os.close(slave_fd)
+    deadline = time.monotonic() + timeout_seconds
+
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                process.kill()
+                raise subprocess.TimeoutExpired(command, timeout_seconds, output.decode(errors="replace"))
+
+            ready, _, _ = select.select([master_fd], [], [], min(0.2, remaining))
+            if ready:
+                try:
+                    chunk = os.read(master_fd, 4096)
+                except OSError as exc:
+                    if exc.errno != errno.EIO:
+                        raise
+                    chunk = b""
+                if chunk:
+                    output.extend(chunk)
+                elif process.poll() is not None:
+                    break
+            elif process.poll() is not None:
+                try:
+                    while True:
+                        chunk = os.read(master_fd, 4096)
+                        if not chunk:
+                            break
+                        output.extend(chunk)
+                except OSError as exc:
+                    if exc.errno != errno.EIO:
+                        raise
+                break
+    finally:
+        os.close(master_fd)
+
+    return subprocess.CompletedProcess(
+        command,
+        process.wait(),
+        strip_ansi(output.decode(errors="replace")),
+        "",
+    )
+
+
 def run_codex(command_text: str, handle: str, args: argparse.Namespace) -> str:
     prompt = (
         "An authorized iMessage command was received.\n\n"
@@ -130,12 +198,10 @@ def run_codex(command_text: str, handle: str, args: argparse.Namespace) -> str:
         "Carry out the request using the repo instructions. Keep any final response concise "
         "because it may be sent back by iMessage."
     )
-    completed = subprocess.run(
+    completed = run_with_pty(
         codex_command(prompt, args.codex_arg),
         cwd=args.workdir,
-        capture_output=True,
-        text=True,
-        timeout=args.codex_timeout_seconds,
+        timeout_seconds=args.codex_timeout_seconds,
     )
     output = "\n".join(part.strip() for part in (completed.stdout, completed.stderr) if part.strip())
     if completed.returncode != 0:
