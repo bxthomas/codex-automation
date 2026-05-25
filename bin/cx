@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import plistlib
 import re
 import shutil
 import subprocess
@@ -36,6 +37,30 @@ def fail(message: str, code: int = 1) -> None:
 
 def run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, check=check, capture_output=True, text=True)
+
+
+def command_path(command: str) -> str | None:
+    path = shutil.which(command)
+    if path:
+        return path
+
+    if command == "codex":
+        app_path = Path("/Applications/Codex.app/Contents/Resources/codex")
+        if app_path.exists():
+            return str(app_path)
+
+    return None
+
+
+def launchctl_getenv(key: str) -> str | None:
+    completed = subprocess.run(
+        ["launchctl", "getenv", key],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    value = completed.stdout.strip()
+    return value or None
 
 
 def read_secret(manifest: dict[str, Any]) -> dict[str, str]:
@@ -167,7 +192,12 @@ def install_launch_agent(manifest: dict[str, Any], bootstrap: bool) -> None:
     source = REPO_ROOT / launch["source"]
     destination = Path(launch["destination"]).expanduser()
     destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    shutil.copy2(source, destination)
+
+    with source.open("rb") as source_file:
+        plist = plistlib.load(source_file)
+    plist["ProgramArguments"] = [str(REPO_ROOT / "bin" / "load-automation-env")]
+    with destination.open("wb") as destination_file:
+        plistlib.dump(plist, destination_file)
     print(f"Installed LaunchAgent: {destination}")
 
     if not bootstrap:
@@ -199,7 +229,11 @@ def command_exec(args: argparse.Namespace) -> None:
         fail(f"Secret is missing required key(s): {', '.join(missing)}")
     for key in keys:
         env.setdefault(key, secret[key])
-    os.execvpe("codex", ["codex", *args.codex_args], env)
+
+    codex_path = command_path("codex")
+    if not codex_path:
+        fail("codex command not found; install Codex or add it to PATH.", 127)
+    os.execvpe(codex_path, ["codex", *args.codex_args], env)
 
 
 def command_doctor(_: argparse.Namespace) -> None:
@@ -209,7 +243,7 @@ def command_doctor(_: argparse.Namespace) -> None:
     print(f"Codex config: {CODEX_CONFIG} ({'present' if CODEX_CONFIG.exists() else 'missing'})")
 
     for command in ("codex", "aws", "python3", "ruby"):
-        path = shutil.which(command)
+        path = command_path(command)
         print(f"{command}: {path or 'missing'}")
 
     if CODEX_CONFIG.exists():
@@ -219,7 +253,8 @@ def command_doctor(_: argparse.Namespace) -> None:
             print(f"mcp {name}: {status}")
 
     for key in manifest.get("envKeys", []):
-        status = "present" if os.environ.get(str(key)) else "missing"
+        key = str(key)
+        status = "present" if os.environ.get(key) or launchctl_getenv(key) else "missing"
         print(f"env {key}: {status}")
 
 
