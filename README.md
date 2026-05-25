@@ -27,6 +27,7 @@ cd codex-automation
 ./bin/cx install --install-codex-wrapper
 ./bin/cx install --install-imessage-agent --allowed-handle tamikomadori@yahoo.com
 ./bin/cx doctor               # inspect local setup
+./bin/cx imessage-agent-status
 ./bin/cx exec "prompt"        # run Codex with automation secrets loaded
 ```
 
@@ -63,6 +64,14 @@ Useful options:
 ```
 
 The LaunchAgent uses `KeepAlive` and `ThrottleInterval` so launchd restarts it after a crash without tight restart loops. Grant Full Disk Access to the app or shell that runs the LaunchAgent, otherwise macOS will block reads from `~/Library/Messages/chat.db`.
+
+Check whether it is loaded and running:
+
+```sh
+./bin/cx imessage-agent-status
+```
+
+`./bin/cx doctor` also includes this status.
 
 ## MCP Servers
 

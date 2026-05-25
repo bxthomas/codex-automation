@@ -30,6 +30,7 @@ IMESSAGE_AGENT_DESTINATION = (
     Path.home() / "Library" / "LaunchAgents" / "com.brianthomas.imessage-codex-agent.plist"
 )
 IMESSAGE_AGENT_LABEL = "com.brianthomas.imessage-codex-agent"
+IMESSAGE_AGENT_LOG = Path.home() / "Library" / "Logs" / "imessage-codex-agent.log"
 
 
 def load_manifest() -> dict[str, Any]:
@@ -77,6 +78,54 @@ def launchctl_getenv(key: str) -> str | None:
     )
     value = completed.stdout.strip()
     return value or None
+
+
+def launchctl_print_service(label: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["launchctl", "print", f"gui/{os.getuid()}/{label}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def parse_launchctl_fields(output: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for line in output.splitlines():
+        stripped = line.strip()
+        for key in ("state", "pid", "last exit code"):
+            prefix = f"{key} = "
+            if stripped.startswith(prefix):
+                fields[key] = stripped[len(prefix) :]
+    return fields
+
+
+def imessage_agent_status() -> tuple[str, dict[str, str], str]:
+    completed = launchctl_print_service(IMESSAGE_AGENT_LABEL)
+    plist_missing = not IMESSAGE_AGENT_DESTINATION.exists()
+    if completed.returncode != 0:
+        if plist_missing:
+            return "missing", {}, f"LaunchAgent plist is not installed at {IMESSAGE_AGENT_DESTINATION}"
+        detail = (completed.stderr or completed.stdout or "").strip()
+        return "not loaded", {}, detail or "launchctl could not find the service"
+
+    fields = parse_launchctl_fields(completed.stdout)
+    state = fields.get("state", "unknown")
+    detail = f"LaunchAgent plist is not installed at {IMESSAGE_AGENT_DESTINATION}" if plist_missing else ""
+    return state, fields, detail
+
+
+def print_imessage_agent_status() -> None:
+    status, fields, detail = imessage_agent_status()
+    print(f"imessage agent: {status}")
+    print(f"imessage agent plist: {IMESSAGE_AGENT_DESTINATION}")
+    print(f"imessage agent log: {IMESSAGE_AGENT_LOG}")
+    if fields.get("pid"):
+        print(f"imessage agent pid: {fields['pid']}")
+    if fields.get("last exit code"):
+        print(f"imessage agent last exit code: {fields['last exit code']}")
+    if detail:
+        print(f"imessage agent detail: {detail}")
 
 
 def path_arg(value: str) -> Path:
@@ -335,6 +384,10 @@ def command_install_imessage_agent(args: argparse.Namespace) -> None:
     install_imessage_agent(args)
 
 
+def command_imessage_agent_status(_: argparse.Namespace) -> None:
+    print_imessage_agent_status()
+
+
 def command_install(args: argparse.Namespace) -> None:
     manifest = load_manifest()
     selected = set(args.servers) if args.servers else None
@@ -388,11 +441,7 @@ def command_doctor(_: argparse.Namespace) -> None:
         status = "present" if os.environ.get(key) or launchctl_getenv(key) else "missing"
         print(f"env {key}: {status}")
 
-    print(
-        "imessage agent: "
-        + ("installed" if IMESSAGE_AGENT_DESTINATION.exists() else "missing")
-        + f" ({IMESSAGE_AGENT_DESTINATION})"
-    )
+    print_imessage_agent_status()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -488,6 +537,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     imessage_agent.add_argument("--no-bootstrap", action="store_true")
     imessage_agent.set_defaults(func=command_install_imessage_agent)
+
+    imessage_agent_status_parser = subparsers.add_parser(
+        "imessage-agent-status",
+        help="Check whether the optional iMessage-to-Codex LaunchAgent is loaded and running",
+    )
+    imessage_agent_status_parser.set_defaults(func=command_imessage_agent_status)
 
     return parser
 
