@@ -68,6 +68,8 @@ The LaunchAgent uses `KeepAlive` and `ThrottleInterval` so launchd restarts it a
 
 Grant Full Disk Access to `~/Applications/Codex iMessage Agent.app`, otherwise macOS will block reads from `~/Library/Messages/chat.db`. The app wrapper exists because Full Disk Access often refuses hidden runtime binaries.
 
+The wrapper also exports a normal Homebrew/system `PATH` so MCP servers can find tools such as `aws` when launched by launchd.
+
 Check whether it is loaded and running:
 
 ```sh
