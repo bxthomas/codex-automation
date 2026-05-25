@@ -1,6 +1,6 @@
 # Vestaboard MCP Server
 
-This project-local MCP server exposes two tools to Codex:
+This project-local MCP server exposes one tool to Codex:
 
 - `send_vestaboard_text`: formats and sends arbitrary text to the Vestaboard.
 
@@ -23,10 +23,10 @@ For local testing, an environment variable named `VESTABOARD_RW_KEY` still takes
 
 ## Register With Codex
 
-From this repo, register the server once:
+From this repo, register the server once with the repo installer:
 
 ```sh
-codex mcp add vestaboard -- python3 /Users/brianthomas/codex-exec-test/mcp/vestaboard/server.py
+./bin/cx install vestaboard
 ```
 
 For non-interactive `codex exec`, the Vestaboard tool must be pre-approved because it has an external side effect. The working config in `~/.codex/config.toml` is:

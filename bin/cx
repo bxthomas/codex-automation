@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+"""Install and run Codex automation MCP servers from this repo."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MANIFEST_PATH = REPO_ROOT / "codex-automation.json"
+CODEX_CONFIG = Path.home() / ".codex" / "config.toml"
+
+
+def load_manifest() -> dict[str, Any]:
+    try:
+        return json.loads(MANIFEST_PATH.read_text())
+    except FileNotFoundError:
+        fail(f"Missing manifest: {MANIFEST_PATH}")
+    except json.JSONDecodeError as exc:
+        fail(f"Invalid JSON in {MANIFEST_PATH}: {exc}")
+
+
+def fail(message: str, code: int = 1) -> None:
+    print(f"cx: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, check=check, capture_output=True, text=True)
+
+
+def read_secret(manifest: dict[str, Any]) -> dict[str, str]:
+    secret_name = manifest.get("secretName", "automation")
+    command = [
+        "aws",
+        "secretsmanager",
+        "get-secret-value",
+        "--secret-id",
+        secret_name,
+        "--query",
+        "SecretString",
+        "--output",
+        "text",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except FileNotFoundError:
+        fail("aws CLI not found; cannot read automation secrets.", 127)
+    except subprocess.TimeoutExpired:
+        fail("Timed out reading automation secrets from AWS Secrets Manager.")
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        message = f"Failed to read AWS Secrets Manager secret '{secret_name}'."
+        if detail:
+            message = f"{message} {detail}"
+        fail(message, exc.returncode or 1)
+
+    try:
+        parsed = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        fail(f"Secret '{secret_name}' must be a JSON object.")
+
+    if not isinstance(parsed, dict):
+        fail(f"Secret '{secret_name}' must be a JSON object.")
+
+    return {key: value for key, value in parsed.items() if isinstance(value, str)}
+
+
+def backup_config() -> None:
+    if not CODEX_CONFIG.exists():
+        return
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    backup = CODEX_CONFIG.with_name(f"{CODEX_CONFIG.name}.bak-{stamp}")
+    shutil.copy2(CODEX_CONFIG, backup)
+    print(f"Backed up {CODEX_CONFIG} to {backup}")
+
+
+def toml_quote(value: str) -> str:
+    return json.dumps(value)
+
+
+def toml_array(values: list[str]) -> str:
+    return "[" + ", ".join(toml_quote(value) for value in values) + "]"
+
+
+def server_section(name: str, spec: dict[str, Any]) -> str:
+    lines = [f"[mcp_servers.{name}]"]
+    approval = spec.get("defaultToolsApprovalMode")
+    if approval:
+        lines.append(f"default_tools_approval_mode = {toml_quote(str(approval))}")
+
+    if spec.get("type") == "http":
+        lines.append(f"url = {toml_quote(str(spec['url']))}")
+        bearer = spec.get("bearerTokenEnvVar")
+        if bearer:
+            lines.append(f"bearer_token_env_var = {toml_quote(str(bearer))}")
+    elif spec.get("type") == "stdio":
+        command = str(spec["command"])
+        args = [str(resolve_arg(arg)) for arg in spec.get("args", [])]
+        lines.append(f"command = {toml_quote(command)}")
+        lines.append(f"args = {toml_array(args)}")
+    else:
+        fail(f"Unsupported MCP server type for {name}: {spec.get('type')}")
+
+    for tool_name, mode in sorted((spec.get("toolApprovals") or {}).items()):
+        lines.append("")
+        lines.append(f"[mcp_servers.{name}.tools.{tool_name}]")
+        lines.append(f"approval_mode = {toml_quote(str(mode))}")
+
+    return "\n".join(lines) + "\n"
+
+
+def resolve_arg(arg: str) -> Path | str:
+    path = REPO_ROOT / arg
+    return path if path.exists() else arg
+
+
+def replace_section(config: str, name: str, section: str) -> str:
+    pattern = re.compile(
+        rf"(?ms)^\[mcp_servers\.{re.escape(name)}\]\n.*?(?=^\[(?!mcp_servers\.{re.escape(name)}\.tools\.)|\Z)"
+    )
+    if pattern.search(config):
+        return pattern.sub(section + "\n", config).rstrip() + "\n"
+    if config and not config.endswith("\n"):
+        config += "\n"
+    return config + "\n" + section
+
+
+def install_config(manifest: dict[str, Any], only: set[str] | None) -> None:
+    CODEX_CONFIG.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    config = CODEX_CONFIG.read_text() if CODEX_CONFIG.exists() else ""
+
+    servers = manifest.get("mcpServers") or {}
+    selected = only or set(servers)
+    unknown = selected.difference(servers)
+    if unknown:
+        fail(f"Unknown MCP server(s): {', '.join(sorted(unknown))}")
+
+    backup_config()
+    for name in sorted(selected):
+        config = replace_section(config, name, server_section(name, servers[name]))
+        print(f"Configured MCP server: {name}")
+
+    CODEX_CONFIG.write_text(config)
+
+
+def install_launch_agent(manifest: dict[str, Any], bootstrap: bool) -> None:
+    launch = manifest.get("launchAgent")
+    if not launch:
+        return
+
+    source = REPO_ROOT / launch["source"]
+    destination = Path(launch["destination"]).expanduser()
+    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    print(f"Installed LaunchAgent: {destination}")
+
+    if not bootstrap:
+        return
+
+    uid = str(os.getuid())
+    label = str(launch["label"])
+    run(["launchctl", "bootout", f"gui/{uid}", str(destination)], check=False)
+    run(["launchctl", "bootstrap", f"gui/{uid}", str(destination)])
+    run(["launchctl", "kickstart", "-k", f"gui/{uid}/{label}"])
+    print(f"Started LaunchAgent: {label}")
+
+
+def command_install(args: argparse.Namespace) -> None:
+    manifest = load_manifest()
+    selected = set(args.servers) if args.servers else None
+    install_config(manifest, selected)
+    if args.launch_agent and (selected is None or "home-assistant" in selected):
+        install_launch_agent(manifest, bootstrap=not args.no_bootstrap)
+
+
+def command_exec(args: argparse.Namespace) -> None:
+    manifest = load_manifest()
+    secret = read_secret(manifest)
+    env = os.environ.copy()
+    keys = [str(key) for key in manifest.get("envKeys", [])]
+    missing = [key for key in keys if not env.get(key) and not secret.get(key)]
+    if missing:
+        fail(f"Secret is missing required key(s): {', '.join(missing)}")
+    for key in keys:
+        env.setdefault(key, secret[key])
+    os.execvpe("codex", ["codex", *args.codex_args], env)
+
+
+def command_doctor(_: argparse.Namespace) -> None:
+    manifest = load_manifest()
+    print(f"Repo: {REPO_ROOT}")
+    print(f"Manifest: {MANIFEST_PATH}")
+    print(f"Codex config: {CODEX_CONFIG} ({'present' if CODEX_CONFIG.exists() else 'missing'})")
+
+    for command in ("codex", "aws", "python3", "ruby"):
+        path = shutil.which(command)
+        print(f"{command}: {path or 'missing'}")
+
+    if CODEX_CONFIG.exists():
+        config = CODEX_CONFIG.read_text()
+        for name in sorted((manifest.get("mcpServers") or {}).keys()):
+            status = "configured" if f"[mcp_servers.{name}]" in config else "missing"
+            print(f"mcp {name}: {status}")
+
+    for key in manifest.get("envKeys", []):
+        status = "present" if os.environ.get(str(key)) else "missing"
+        print(f"env {key}: {status}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="cx")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    install = subparsers.add_parser("install", help="Install MCP server config from this repo")
+    install.add_argument("servers", nargs="*", help="Optional MCP server names to install")
+    install.add_argument("--no-launch-agent", dest="launch_agent", action="store_false")
+    install.add_argument("--no-bootstrap", action="store_true")
+    install.set_defaults(func=command_install, launch_agent=True)
+
+    exec_parser = subparsers.add_parser("exec", help="Run Codex with automation secrets loaded")
+    exec_parser.add_argument("codex_args", nargs=argparse.REMAINDER)
+    exec_parser.set_defaults(func=command_exec)
+
+    doctor = subparsers.add_parser("doctor", help="Check local automation setup")
+    doctor.set_defaults(func=command_doctor)
+
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

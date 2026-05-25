@@ -12,4 +12,4 @@ When the user asks to send something to the Vestaboard:
 
 Home Assistant is available as an HTTP MCP server named `home-assistant` at `http://192.168.40.142:8123/api/mcp`.
 
-When using `codex exec` from a shell and Home Assistant tools are needed, prefer `./bin/codex-automation exec ...`; it loads `HOME_ASSISTANT_TOKEN` from AWS Secrets Manager secret `automation` before starting Codex.
+When using `codex exec` from a shell and Home Assistant tools are needed, prefer `./bin/cx exec ...`; it loads `HOME_ASSISTANT_TOKEN` from AWS Secrets Manager secret `automation` before starting Codex.

@@ -40,7 +40,7 @@ Apps and processes launched from that user launchd session can inherit `HOME_ASS
 The project launcher remains available if you want an explicit per-command fallback:
 
 ```sh
-./bin/codex-automation exec "Turn on the living room lights."
+./bin/cx exec "Turn on the living room lights."
 ```
 
 The launcher does not print the token. It reads the `automation` secret, exports `HOME_ASSISTANT_TOKEN` for the child Codex process, and then replaces itself with `codex`.

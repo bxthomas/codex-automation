@@ -1,0 +1,34 @@
+{
+  "secretName": "automation",
+  "envKeys": ["HOME_ASSISTANT_TOKEN"],
+  "launchAgent": {
+    "source": "com.brianthomas.codex-automation-env.plist",
+    "destination": "~/Library/LaunchAgents/com.brianthomas.codex-automation-env.plist",
+    "label": "com.brianthomas.codex-automation-env"
+  },
+  "mcpServers": {
+    "vestaboard": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["mcp/vestaboard/server.py"],
+      "defaultToolsApprovalMode": "approve",
+      "toolApprovals": {
+        "send_vestaboard_text": "approve"
+      }
+    },
+    "messages": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["mcp/messages/server.py"],
+      "toolApprovals": {
+        "send_text_message": "approve"
+      }
+    },
+    "home-assistant": {
+      "type": "http",
+      "url": "http://192.168.40.142:8123/api/mcp",
+      "bearerTokenEnvVar": "HOME_ASSISTANT_TOKEN",
+      "defaultToolsApprovalMode": "approve"
+    }
+  }
+}
