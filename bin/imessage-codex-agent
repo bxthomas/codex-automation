@@ -80,17 +80,58 @@ def latest_message_id() -> int:
     return int(row["max_id"])
 
 
+def text_from_attributed_body(body: bytes | None) -> str:
+    if not body:
+        return ""
+
+    # Newer Messages rows may store text only in an archived NSAttributedString.
+    # In that archive, the string payload is usually a length-prefixed NSString.
+    marker = b"NSString"
+    candidates: list[str] = []
+    start = 0
+    while True:
+        marker_index = body.find(marker, start)
+        if marker_index < 0:
+            break
+        scan_end = min(len(body), marker_index + 80)
+        for index in range(marker_index + len(marker), scan_end - 1):
+            length = body[index]
+            if not 0 < length <= DEFAULT_MAX_PROMPT_CHARS:
+                continue
+            end = index + 1 + length
+            if end > len(body):
+                continue
+            try:
+                candidate = body[index + 1 : end].decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            candidate = candidate.strip()
+            if candidate and not candidate.startswith("NS") and any(char.isalnum() for char in candidate):
+                candidates.append(candidate)
+        start = marker_index + len(marker)
+
+    if candidates:
+        return max(candidates, key=len)
+
+    decoded = body.decode("utf-8", errors="ignore")
+    runs = re.findall(r"[^\x00-\x1f\x7f-\x9f]{3,}", decoded)
+    ignored = {"streamtyped", "NSObject", "NSString", "NSAttributedString", "NSDictionary", "NSNumber", "NSValue"}
+    useful = [run.strip() for run in runs if run.strip() and run.strip() not in ignored and not run.strip().startswith("_kIM")]
+    return " ".join(useful).strip()
+
+
 def fetch_new_messages(after_id: int, limit: int = 50) -> list[sqlite3.Row]:
     query = """
         SELECT
           m.ROWID AS message_id,
           h.id AS handle,
           m.is_from_me AS is_from_me,
-          m.text AS text
+          m.text AS text,
+          m.attributedBody AS attributed_body
         FROM message m
         LEFT JOIN handle h ON h.ROWID = m.handle_id
         WHERE m.ROWID > ?
-          AND m.text IS NOT NULL
+          AND (m.text IS NOT NULL OR m.attributedBody IS NOT NULL)
         ORDER BY m.ROWID ASC
         LIMIT ?
     """
@@ -230,7 +271,7 @@ def maybe_reply(handle: str, text: str, args: argparse.Namespace) -> None:
 
 def process_message(row: sqlite3.Row, args: argparse.Namespace) -> None:
     handle = str(row["handle"] or "")
-    text = str(row["text"] or "")
+    text = str(row["text"] or "") or text_from_attributed_body(row["attributed_body"])
     normalized_handle = handle.lower()
     allowed_handles = args.allowed_self_handles if bool(row["is_from_me"]) else args.allowed_handles
     if normalized_handle not in allowed_handles:
