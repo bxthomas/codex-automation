@@ -263,6 +263,9 @@ def run_codex(command_text: str, handle: str, args: argparse.Namespace) -> str:
 def maybe_reply(handle: str, text: str, args: argparse.Namespace) -> None:
     if args.reply_mode == "none":
         return
+    if not handle:
+        log("reply skipped because Messages row had no reply handle")
+        return
     body = text.strip()
     if len(body) > args.reply_chars:
         body = body[: args.reply_chars - 1].rstrip() + "..."
@@ -273,8 +276,9 @@ def process_message(row: sqlite3.Row, args: argparse.Namespace) -> None:
     handle = str(row["handle"] or "")
     text = str(row["text"] or "") or text_from_attributed_body(row["attributed_body"])
     normalized_handle = handle.lower()
-    allowed_handles = args.allowed_self_handles if bool(row["is_from_me"]) else args.allowed_handles
-    if normalized_handle not in allowed_handles:
+    is_from_me = bool(row["is_from_me"])
+    allowed_handles = args.allowed_self_handles if is_from_me else args.allowed_handles
+    if normalized_handle not in allowed_handles and not (is_from_me and not normalized_handle and allowed_handles):
         return
     if not text.startswith(args.prefix):
         return
@@ -285,9 +289,10 @@ def process_message(row: sqlite3.Row, args: argparse.Namespace) -> None:
     if len(command_text) > args.max_prompt_chars:
         command_text = command_text[: args.max_prompt_chars]
 
-    log(f"running Codex for message_id={row['message_id']} handle={handle}")
+    display_handle = handle or "(self)"
+    log(f"running Codex for message_id={row['message_id']} handle={display_handle}")
     try:
-        output = run_codex(command_text, handle, args)
+        output = run_codex(command_text, display_handle, args)
         maybe_reply(handle, output, args)
     except Exception as exc:
         log(f"ERROR: command failed for message_id={row['message_id']}: {exc}")
