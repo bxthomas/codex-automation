@@ -240,6 +240,29 @@ def run_with_pty(command: list[str], cwd: Path, timeout_seconds: int) -> subproc
     )
 
 
+def extract_codex_final_response(output: str) -> str:
+    lines = [line.rstrip() for line in output.splitlines()]
+    final_start = -1
+    for index, line in enumerate(lines):
+        if line.strip() == "codex":
+            final_start = index + 1
+
+    if final_start >= 0:
+        collected: list[str] = []
+        for line in lines[final_start:]:
+            stripped = line.strip()
+            if stripped == "tokens used":
+                break
+            if re.fullmatch(r"[\d,]+", stripped) and collected:
+                break
+            collected.append(line)
+        response = "\n".join(collected).strip()
+        if response:
+            return response
+
+    return output.strip()
+
+
 def run_codex(command_text: str, handle: str, args: argparse.Namespace) -> str:
     prompt = (
         "An authorized iMessage command was received.\n\n"
@@ -257,7 +280,7 @@ def run_codex(command_text: str, handle: str, args: argparse.Namespace) -> str:
     output = "\n".join(part.strip() for part in (completed.stdout, completed.stderr) if part.strip())
     if completed.returncode != 0:
         raise RuntimeError(output or f"Codex exited with status {completed.returncode}")
-    return output.strip() or "Codex command completed."
+    return extract_codex_final_response(output) or "Codex command completed."
 
 
 def maybe_reply(handle: str, text: str, args: argparse.Namespace) -> None:
